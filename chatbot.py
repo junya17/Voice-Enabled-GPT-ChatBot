@@ -4,13 +4,14 @@ from pydub.playback import play
 import requests
 import json
 import speech_recognition as sr
+import os
 
 
 #Initialize the OpenAI client
 client = OpenAI()
 
 # Replace 'YOUR_API_KEY' with your actual API key from OpenWeatherMap
-API_KEY = 'YOUR_API_KEY'
+API_KEY = os.getenv('YOUR_API_KEY')
 WEATHER_API_URL = 'http://api.openweathermap.org/data/2.5/weather'
 
 def listen_from_microphone():
@@ -43,17 +44,35 @@ def get_current_weather(location, unit="imperial"):
             weather_data = {
                 "location": location,
                 "temperature": data["main"].get("temp", "N/A"),
-                "weather_condition": data["weather"][0]["main"] if "weather" in data and data["weather"] else "N/A",
-                "humidity": data["main"].get("humidity", "N/A"),
-                "wind_speed": data["wind"].get("speed", "N/A") if "wind" in data else "N/A",
-                "pressure": data["main"].get("pressure", "N/A"),
-                "visibility": data.get("visibility", "N/A")
+            #     "weather_condition": data["weather"][0]["main"] if "weather" in data and data["weather"] else "N/A",
+            #     "humidity": data["main"].get("humidity", "N/A"),
+            #     "wind_speed": data["wind"].get("speed", "N/A") if "wind" in data else "N/A",
+            #     "pressure": data["main"].get("pressure", "N/A"),
+            #     "visibility": data.get("visibility", "N/A")
             }
             return json.dumps(weather_data)
         else:
             return json.dumps({"location": location, "error": "Weather data not available"})
     except requests.exceptions.RequestException as e:
         return json.dumps({"location": location, "error": "API Request Failed", "message": str(e)})
+    
+def audio_response(response, file_name, message,input):
+    response = client.audio.speech.create(
+                model="tts-1",
+                voice="alloy",
+                input=input,
+            )
+
+    file_name = file_name
+    temp_file = f"{file_name}.mp3"
+    response.stream_to_file(temp_file)
+
+    audio = AudioSegment.from_file(temp_file, format="mp3")
+    play(audio)
+    print(message)
+
+    os.remove(f"{file_name}.mp3")
+
 
 def run_conversation():
 
@@ -117,68 +136,23 @@ def run_conversation():
                         "content": function_response,
                     }
                 )
-            second_response = client.chat.completions.create(
+            response_message = client.chat.completions.create(
                 model="gpt-3.5-turbo-1106",
                 messages=messages,
             )
-            second_response = second_response.choices[0].message.content
+            response_message = response_message.choices[0].message.content
+            audio_response(response, "temp_output_api", response_message, response_message)
 
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice="alloy",
-                input=second_response,
-            )
-
-            # response = response.stream_to_file("output.mp3")
-            # print(second_response)
-            # os.system('afplay output.mp3')
-            temp_file = "temp_output_api.mp3"
-            response.stream_to_file(temp_file)
-
-            audio = AudioSegment.from_file(temp_file, format="mp3")
-            play(audio)
-            print(second_response)
-
-            messages.append({"role": "assistant", "content": second_response})
+            messages.append({"role": "assistant", "content": response_message})
 
         else:
             response_message = response.choices[0].message.content
-            response = client.audio.speech.create(
-                model="tts-1",
-                voice="alloy",
-                input=response_message,
-            )
-
-            # response = response.stream_to_file("output.mp3")
-            # print(response_message)
-            # os.system('afplay output.mp3')
-            temp_file = "temp_output_el.mp3"
-            response.stream_to_file(temp_file)
-
-            audio = AudioSegment.from_file(temp_file, format="mp3")
-            play(audio)
-            print(response_message)
+            audio_response(response, "temp_output_el", response_message,response_message)
 
             messages.append({"role": "assistant", "content": response_message})
-        
-    response = client.audio.speech.create(
-                model="tts-1",
-                voice="alloy",
-                input="Good by",
-            )
+
+    audio_response(response, "temp_output_bye", "Good bye", "Good bye")
     
-    # Say goodbye and end the conversation
-    # response = response.stream_to_file("by.mp3")
-    # print("Good by👋")
-    # os.system('afplay by.mp3')
-
-    temp_file = "temp_output_bye.mp3"
-    response.stream_to_file(temp_file)
-
-    audio = AudioSegment.from_file(temp_file, format="mp3")
-    play(audio)
-    print("Good by👋")
-
     return "Conversation ended."
 
 print(run_conversation())
